@@ -67,6 +67,7 @@ The settings are at the top of the script and in the two `gdctl set` lines:
 |---|---|---|
 | `AC` | `/sys/class/power_supply/ACAD/online` | `ls /sys/class/power_supply/` (look for type `Mains`) |
 | `CARD` | `alsa_card.pci-0000_00_1f.3` | `wpctl status`, then `wpctl inspect <device id>` → `device.name` |
+| `HDMI_SINK` | `alsa_output.pci-0000_00_1f.3.hdmi-stereo` | `wpctl inspect @DEFAULT_AUDIO_SINK@` → `node.name` (while on monitor speakers) |
 | Connectors | `eDP-1` (laptop), `HDMI-1` (monitor) | `/usr/bin/python3 /usr/bin/gdctl show` |
 | Extended layout | laptop at scale 1.25, position (0, 362); monitor at scale 1, position (1536, 0), primary | Arrange your displays in Settings → Displays, then read the values from `gdctl show` |
 | `RESTORE_DELAY` | `5` seconds | Increase it if your monitor takes longer to wake up |
@@ -83,6 +84,7 @@ To dry-run a layout without applying it, add `-V`:
 
 - **Unplugging the charger by hand triggers it too.** The laptop can't tell a power cut from a pulled charger.
 - **It only acts while you're logged in.** A power cut on the login screen isn't handled.
+- **Monitor speaker volume is kept.** Switching profiles destroys the HDMI sink, and WirePlumber can bring it back at 100%. So the script saves the HDMI volume and mute state at the power cut and puts them back when power returns.
 - **Laptop speaker volume.** The laptop speakers use their own volume setting. Set it once while they're active and it should stay at that level.
 - **Why `/usr/bin/python3`?** `gdctl` needs the system Python's `gi` module. A conda or other Python first on `PATH` breaks it, so the script calls the system Python directly.
 
