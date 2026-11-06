@@ -7,10 +7,14 @@
 #                     audio -> laptop speakers
 #   power restored -> extended layout (monitor primary on the right),
 #                     audio -> HDMI (monitor's speakers)
+#   HDMI unplugged -> audio -> laptop speakers (regardless of power), so
+#                     plugging the charger in without the monitor doesn't send
+#                     sound to an HDMI port with nothing on it
 
 AC=/sys/class/power_supply/ACAD/online
 CARD=alsa_card.pci-0000_00_1f.3
 HDMI_SINK=alsa_output.pci-0000_00_1f.3.hdmi-stereo
+HDMI_STATUS_GLOB='/sys/class/drm/card*-HDMI-A-1/status'   # kernel's view of the HDMI cable
 PY=/usr/bin/python3          # system python; miniconda's lacks the gi module gdctl needs
 gdctl() { "$PY" /usr/bin/gdctl "$@"; }
 RESTORE_DELAY=5              # seconds to let the monitor wake up after power returns
@@ -76,31 +80,72 @@ restore_hdmi_volume() {
         && log "restored HDMI volume $hdmi_vol (muted=$hdmi_muted)"
 }
 
-on_battery() {
-    log "power cut: mirroring + laptop speakers"
-    gdctl set -L --primary --scale 1.25 -M eDP-1 -M HDMI-1 || log "gdctl mirror failed"
+hdmi_plugged() {   # true if the HDMI cable has something on the other end
+    local f
+    for f in $HDMI_STATUS_GLOB; do
+        [[ -r $f && $(<"$f") == connected ]] && return 0
+    done
+    return 1
+}
+
+laptop_audio() {
     save_hdmi_volume
     set_audio_profile "output:analog-stereo+input:analog-stereo"
 }
 
-on_ac() {
-    log "power back: extended + monitor speakers"
-    sleep "$RESTORE_DELAY"
-    gdctl set -L --scale 1.25 --x 0 --y 362 -M eDP-1 \
-               -L --primary --scale 1 --x 1536 --y 0 -M HDMI-1 || log "gdctl extend failed"
+monitor_audio() {
     set_audio_profile "output:hdmi-stereo+input:analog-stereo"
     restore_hdmi_volume
 }
 
+# States:
+#   monitor  = on AC, HDMI plugged in  -> extended layout, monitor speakers
+#   powercut = on battery, HDMI plugged in (monitor dead but still "connected")
+#                                      -> mirror, laptop speakers
+#   laptop   = HDMI not plugged in     -> laptop speakers (GNOME handles the
+#                                         single display by itself)
+on_powercut() {
+    log "power cut: mirroring + laptop speakers"
+    gdctl set -L --primary --scale 1.25 -M eDP-1 -M HDMI-1 || log "gdctl mirror failed"
+    laptop_audio
+}
+
+on_monitor() {   # $1 = previous state
+    if [[ $1 == powercut ]]; then
+        log "power back: extended + monitor speakers"
+        sleep "$RESTORE_DELAY"   # let the monitor wake up
+        gdctl set -L --scale 1.25 --x 0 --y 362 -M eDP-1 \
+                   -L --primary --scale 1 --x 1536 --y 0 -M HDMI-1 || log "gdctl extend failed"
+    else
+        # Cable just plugged in: GNOME restores the saved layout itself.
+        log "monitor plugged in: monitor speakers"
+        sleep 2   # let the HDMI audio device become available
+    fi
+    monitor_audio
+}
+
+on_laptop() {
+    log "no monitor: laptop speakers"
+    laptop_audio
+}
+
 prev=""
 while true; do
-    cur=$(cat "$AC" 2>/dev/null)
-    if [[ -n $cur && $cur != "$prev" ]]; then
-        # Skip acting on the first read at startup when already on AC (normal state).
-        if [[ $cur == 0 ]]; then on_battery
-        elif [[ -n $prev ]]; then on_ac
+    ac=$(cat "$AC" 2>/dev/null)
+    if [[ -n $ac ]]; then
+        if ! hdmi_plugged; then cur=laptop
+        elif [[ $ac == 1 ]]; then cur=monitor
+        else cur=powercut
         fi
-        prev=$cur
+        if [[ $cur != "$prev" ]]; then
+            case $cur in
+                laptop)   on_laptop ;;
+                powercut) on_powercut ;;
+                # At startup with the monitor already in use, leave things alone.
+                monitor)  [[ -n $prev ]] && on_monitor "$prev" ;;
+            esac
+            prev=$cur
+        fi
     fi
     sleep 2
 done

@@ -18,6 +18,10 @@ The monitor and the laptop charger are on the same mains power, so **"charger of
 |---|---|---|
 | Charger goes offline (power cut) | Mirror laptop + monitor | Laptop speakers |
 | Charger comes back (power restored) | Extended, monitor primary on the right (after a 5 s delay so the monitor can wake up) | HDMI → monitor speakers |
+| HDMI cable unplugged (any power state) | Left to GNOME | Laptop speakers |
+| HDMI cable plugged in while on charger | Left to GNOME (restores its saved layout) | HDMI → monitor speakers |
+
+The HDMI cable state comes from `/sys/class/drm/card*-HDMI-A-1/status`. So plugging the charger in without the monitor keeps sound on the laptop instead of sending it to an empty HDMI port.
 
 - The display layout is set with `gdctl`, GNOME's display config tool.
 - Audio is switched with `wpctl set-profile`, which changes the sound card profile.
@@ -67,6 +71,7 @@ The settings are at the top of the script and in the two `gdctl set` lines:
 |---|---|---|
 | `AC` | `/sys/class/power_supply/ACAD/online` | `ls /sys/class/power_supply/` (look for type `Mains`) |
 | `CARD` | `alsa_card.pci-0000_00_1f.3` | `wpctl status`, then `wpctl inspect <device id>` → `device.name` |
+| `HDMI_STATUS_GLOB` | `/sys/class/drm/card*-HDMI-A-1/status` | `ls /sys/class/drm/` (the `HDMI-A-*` entry that shows `connected` with the monitor plugged in) |
 | `HDMI_SINK` | `alsa_output.pci-0000_00_1f.3.hdmi-stereo` | `wpctl inspect @DEFAULT_AUDIO_SINK@` → `node.name` (while on monitor speakers) |
 | Connectors | `eDP-1` (laptop), `HDMI-1` (monitor) | `/usr/bin/python3 /usr/bin/gdctl show` |
 | Extended layout | laptop at scale 1.25, position (0, 362); monitor at scale 1, position (1536, 0), primary | Arrange your displays in Settings → Displays, then read the values from `gdctl show` |
